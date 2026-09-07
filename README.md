@@ -51,6 +51,24 @@ Codex 인수는 그대로 전달됩니다. 예: `tcodex -m MODEL`,
 Codex를 종료하면 해당 tmux 세션도 종료됩니다. 기존 일반 tmux 세션은 별도 소켓으로
 분리됩니다. 70열 이상, 계정 수 + 12행 이상인 터미널을 사용하세요.
 
+### Fast 모드 표시
+
+`/fast on`을 실행해도 입력창 아래에 상태가 보이지 않으면 Codex의
+`tui.status_line` 목록에 `"fast-mode"`가 있는지 확인하세요. `/statusline`에서
+해당 항목을 선택하거나, `~/.codex/config.toml`의 기존 `[tui]` 섹션을 수정합니다.
+`CODEX_HOME`을 지정했다면 해당 디렉터리의 `config.toml`을 사용합니다.
+기존 항목을 유지하면서 `"fast-mode"`만 추가하세요. 다음은 예시입니다.
+
+```toml
+[tui]
+status_line = ["model-with-reasoning", "fast-mode", "git-branch", "context-remaining", "total-input-tokens", "total-output-tokens", "five-hour-limit", "weekly-limit"]
+```
+
+파일을 직접 수정했다면 `tcodex`를 다시 실행하세요. Codex CLI 0.153.4에서
+`gpt-6-astra medium · Fast on` 표시를 확인했습니다. 이 항목은 현재 모드 설정을
+표시하며, 모드를 켜거나 서버의 실제 우선 처리를 검증하지 않습니다.
+설치기는 개인 Codex 설정을 변경하지 않으므로 이 설정은 별도로 적용합니다.
+
 ## 표시 의미
 
 - `>`: 프록시가 선택한 계정. 해당 Codex 대화에 고정된 계정이라는 뜻은 아닙니다.

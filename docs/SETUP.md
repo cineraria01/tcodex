@@ -9,7 +9,36 @@ Node.js/npm, Python 3.9 이상, 공식 `codex` 명령이 먼저 설치되어 있
 이미 `teamcodex status`가 정상이고 설정이 `~/.config/teamcodex.json`에 있다면
 이 단계는 건너뛰고 [실행기 설치](../README.md#사용)로 돌아가세요.
 
-## 1. 별도 위치에 설치
+## 1. 실행기와 프록시 함께 설치
+
+저장소에서 아래 명령을 실행하면 TeamCodex가 없는 경우 아래 고정 버전을
+별도 npm prefix에 설치하고 `teamcodex` 명령만 노출합니다. 기존 `teamclaude`와
+Codex 설정은 변경하지 않습니다.
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+python3 install.py
+# Linux 상시 서비스까지 설정:
+python3 install.py --service
+```
+
+`--service`는 `systemctl --user enable --now teamcodex.service`와
+`loginctl enable-linger`를 실행합니다. 로그인 종료와 재부팅 후에도 프록시를 유지하며,
+프로세스가 종료되면 5초 후 재시작합니다. linger 권한이 없으면 설치기에 표시된
+`sudo loginctl enable-linger 사용자ID` 명령을 관리자가 실행해야 합니다.
+기존 이름이 같은 사용자 서비스는 덮어쓰지 않습니다.
+
+```sh
+systemctl --user status teamcodex
+journalctl --user -u teamcodex -f
+systemctl --user restart teamcodex  # 필요할 때 재시작
+```
+
+수동 서버가 이미 실행 중이면 먼저 그 터미널에서 종료한 뒤 `--service`를 실행하세요.
+
+### 수동 프록시 설치 (선택)
+
+아래는 자동 설치 대신 직접 설치할 때 사용하는 명령입니다.
 
 upstream 패키지는 `teamclaude` 명령도 포함하므로 별도 npm prefix에 설치합니다.
 아래 PATH를 셸 시작 파일에도 추가하세요.
@@ -42,17 +71,23 @@ SH
 ## 2. 계정 등록과 서버 실행
 
 ```sh
-teamcodex login --name codex-1
-teamcodex login --name codex-2
+tcodex login --name codex-1
+tcodex login --name codex-2
 teamcodex accounts
-teamcodex server
+teamcodex server  # --service 또는 launchd를 사용하지 않는 경우만
 ```
 
-각 로그인 화면에서 서로 다른 본인 계정을 선택합니다. 별도 로그인 디렉터리에서 인증하므로
+각 로그인 화면에서 서로 다른 본인 계정을 선택합니다. 원격 서버에서는 인증 후 브라우저의
+`localhost` 페이지가 열리지 않을 수 있습니다. 마지막 콜백 주소 전체를 `tcodex login`이
+기다리는 터미널에 붙여넣고 Enter를 누르면 서버에서 로그인을 마칩니다. 다른 사람에게
+주소를 전달할 필요가 없습니다. 입력은 숨겨지고 현재 로그인 state와 로컬 주소를 검증합니다.
+잘못된 주소는 다시 입력할 수 있고, 취소는 `Ctrl-C`입니다.
+
+별도 로그인 디렉터리에서 인증하므로
 기존 Codex의 인증 파일을 복사할 필요가 없습니다. 계정 설정 파일에는 토큰이 들어 있으므로
 Git에 추가하지 마세요. 기본 프록시 포트는 `3457`, 전환 임계치는 사용률 `98%`입니다.
 
-서버를 실행한 터미널을 유지하고 다른 터미널에서 `tcodex`를 실행하세요.
+서비스를 설정했다면 바로 `tcodex`를 실행하세요. 수동 서버는 해당 터미널을 유지하고 다른 터미널에서 실행합니다.
 `teamcodex status`로 연결을 확인할 수 있습니다. 모든 계정의 한도가 소진되면
 즉시 계속 응답할 수 있는 것은 아닙니다. 대화 재개는 `tcodex resume SESSION_ID`입니다.
 

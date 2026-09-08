@@ -2,20 +2,24 @@
 """Launch Codex with a read-only TeamCodex footer in an isolated tmux session."""
 
 import os
-from pathlib import Path
 import shlex
 import shutil
 import subprocess
 import sys
 import uuid
+from pathlib import Path
 
 from statusline import read_status, render
+from tcodex_login import login
 
 
 def launch(arguments):
+    if arguments and arguments[0] == "login":
+        return login(arguments[1:])
     if arguments == ["--help"]:
         print("Usage: tcodex [Codex arguments]\n"
               "  tcodex                  Codex + live account footer\n"
+              "  tcodex login [--name NAME]  Add an account with browser callback paste\n"
               "  tcodex resume ID        Continue an existing conversation\n"
               "  Ctrl-b d                Detach without stopping Codex\n"
               "  tmux -L teamcodex-hud attach   Reattach\n"

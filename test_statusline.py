@@ -85,12 +85,12 @@ def check():
         env = {**os.environ, "TEAMCODEX_HUD_PREFIX": str(prefix)}
         installer = Path(__file__).with_name("install.py")
         for _ in range(2):
-            subprocess.run([sys.executable, str(installer)], env=env, check=True, capture_output=True)
+            subprocess.run([sys.executable, str(installer), "--hud-only"], env=env, check=True, capture_output=True)
         link = prefix / "bin/tcodex"
         assert link.is_symlink()
         link.unlink()
         link.write_text("user-owned command")
-        result = subprocess.run([sys.executable, str(installer)], env=env, capture_output=True)
+        result = subprocess.run([sys.executable, str(installer), "--hud-only"], env=env, capture_output=True)
         assert result.returncode != 0 and link.read_text() == "user-owned command"
     print("PASS: rendering, account switch, missing quota, auth headers, local-only HTTP, offline state")
 

@@ -22,19 +22,39 @@ TeamCodex | 2 accounts | switch 98% | > selected, * busy
 
 ## 사용
 
-macOS에서 검증했습니다. Python 3.9 이상, 공식 Codex CLI, 실행 중인 TeamCodex가 필요합니다.
-TeamCodex를 처음 설치한다면 [프록시 설치 및 계정 등록](docs/SETUP.md)을 먼저 진행하세요. 하단 고정 실행에는 tmux도 필요합니다.
+macOS의 기존 실행기와 Linux의 로그인·상시 서비스를 검증했습니다. Python 3.9 이상과 공식 Codex CLI가 필요하며, Codex 실행 화면에는 실행 중인 TeamCodex가 필요합니다.
+설치기는 TeamCodex가 없으면 고정된 upstream 버전을 별도 경로에 함께 설치합니다. Node.js/npm과 Git이 필요하며, 하단 고정 실행에는 tmux도 필요합니다. 자세한 안내는 [설치 및 계정 등록](docs/SETUP.md)을 참고하세요.
 
 ```sh
 brew install tmux                 # macOS, 최초 한 번
 git clone https://github.com/cineraria01/tcodex.git
 cd tcodex
-python3 install.py
+python3 install.py               # 실행기 + 없는 경우 TeamCodex 설치
+# Linux에서 프록시를 상시 실행하려면:
+python3 install.py --service     # 사용자 systemd 서비스 + 로그인 종료 후 유지
+tcodex login --name codex-1
+tcodex login --name codex-2      # 추가할 계정마다 반복
 teamcodex-statusline              # 현재 상태 한 번 표시
 teamcodex-statusline --watch      # 별도 터미널에서 2초마다 갱신
 tcodex                           # Codex와 계정 상태줄을 같은 화면에 표시
 tcodex resume SESSION_ID          # 지정한 기존 대화 재개
 ```
+
+`tcodex login`은 tmux나 실행 중인 프록시 없이 사용할 수 있습니다. 출력된 인증 링크를
+브라우저에서 열고 로그인하세요. 다른 계정은 시크릿 창을 사용하면 편합니다.
+원격 서버에서 마지막 `localhost` 페이지가 열리지 않으면 주소창의
+`http://localhost:1455/auth/callback?...` 전체를 **로그인 중인 터미널에 붙여넣고 Enter**를 누릅니다.
+입력은 화면에 표시되지 않으며, 현재 로그인과 일치하는 로컬 주소만 전달합니다.
+주소를 다른 사람에게 전달하거나 채팅에 붙여넣을 필요가 없습니다. 로컬 브라우저가 직접
+콜백에 연결하면 자동으로 완료되고, `Ctrl-C`는 로그인 프로세스까지 정리합니다.
+`tcodex login --device-auth`도 사용할 수 있습니다.
+
+Linux의 `--service`는 `teamcodex.service`를 활성화하고 `Restart=always`로 재시작합니다.
+설치 시 `loginctl enable-linger`가 거절되면 출력된 관리자 명령을 실행해야 로그아웃 뒤에도
+유지됩니다. 상태는 `systemctl --user status teamcodex`, 로그는
+`journalctl --user -u teamcodex -f`로 확인합니다. 서비스는 수동 `teamcodex server`와
+동시에 실행하지 마세요. macOS 자동 시작은 [launchd 안내](docs/SETUP.md#3-macos-로그인-시-자동-시작-선택)를 따릅니다.
+자동 시작을 설정하지 않은 경우 별도 터미널에서 `teamcodex server`를 켜두세요.
 
 `~/.local/bin`이 PATH에 있어야 합니다. `tcodex`는 현재 폴더에서 `teamcodex run`을
 실행합니다. 실제 Codex 화면 아래에 tmux 패널을 배치하며, 기존 Codex·Claude 설정 파일을
@@ -102,12 +122,18 @@ Codex CLI의 기본 `tui.status_line`은 내장 항목만 지원합니다. 이 �
 
 ```sh
 python3 test_statusline.py
+python3 test_login.py
+python3 test_install.py
 ```
+
+기존 TeamCodex가 있으면 그대로 사용합니다. `python3 install.py --hud-only`는 npm과 서비스 설정 없이 실행기만 설치합니다.
 
 설치 위치는 `~/.local/share/teamcodex-statusline`이며 글로벌 명령 두 개는 이 위치로
 연결된 심볼릭 링크입니다. 제거 시 이 폴더와 자신이 설치한
 `~/.local/bin/tcodex`, `~/.local/bin/teamcodex-statusline` 링크만 제거하면 됩니다.
-TeamCodex 서버와 계정 설정은 별개입니다. 설치 테스트는 `TEAMCODEX_HUD_PREFIX`로
+TeamCodex 서버와 계정 설정은 별개입니다. Linux 자동 시작을 제거하려면 먼저
+`systemctl --user disable --now teamcodex`를 실행하고 자신이 설치한
+`~/.config/systemd/user/teamcodex.service`를 제거한 뒤 `systemctl --user daemon-reload`를 실행합니다. 설치 테스트는 `TEAMCODEX_HUD_PREFIX`로
 별도 경로를 지정할 수 있습니다.
 
 MIT. 막대 표시 방식과 FLEET 설계는 cineraria01/teamclaude-statusline에서 가져왔습니다.

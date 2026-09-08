@@ -66,9 +66,15 @@ Linux의 `--service`는 `teamcodex.service`를 활성화하고 `Restart=always`�
 
 `~/.local/bin`이 PATH에 있어야 합니다. `tcodex`는 현재 폴더에서 `teamcodex run`을
 실행합니다. 실제 Codex 화면 아래에 tmux 패널을 배치하며, 기존 Codex·Claude 설정 파일을
-수정하지 않습니다. `Ctrl-b d`로 연결만 끊은 뒤 다음 명령으로 다시 연결할 수 있습니다.
+수정하지 않습니다. 기본적으로 터미널을 닫거나 `Ctrl-b d`로 마지막 연결을 끊으면
+해당 세션도 종료되며 진행 중인 작업은 중단됩니다. 저장된 대화는
+`tcodex resume SESSION_ID`로 재개할 수 있습니다.
+
+창을 닫아도 작업을 계속 실행하려면 시작할 때 `--keep-alive`를 첫 인수로 지정하세요.
+이 경우에만 `Ctrl-b d`로 분리한 뒤 다시 연결할 수 있습니다.
 
 ```sh
+tcodex --keep-alive               # 명시적으로 백그라운드 유지
 tmux -L teamcodex-hud attach
 ```
 
@@ -132,6 +138,7 @@ Codex CLI의 기본 `tui.status_line`은 내장 항목만 지원합니다. 이 �
 python3 test_statusline.py
 python3 test_login.py
 python3 test_install.py
+python3 test_lifecycle.py          # tmux 필요; 실제 연결 종료와 자식 프로세스 정리 검사
 ```
 
 기존 TeamCodex가 있으면 그대로 사용합니다. `python3 install.py --hud-only`는 npm과 서비스 설정 없이 실행기만 설치합니다.

@@ -14,6 +14,9 @@ from tcodex_login import login
 
 
 def launch(arguments):
+    keep_alive = bool(arguments and arguments[0] == "--keep-alive")
+    if keep_alive:
+        arguments = arguments[1:]
     if arguments and arguments[0] == "login":
         return login(arguments[1:])
     if arguments == ["--help"]:
@@ -21,7 +24,8 @@ def launch(arguments):
               "  tcodex                  Codex + live account footer\n"
               "  tcodex login [--name NAME]  Add an account with browser callback paste\n"
               "  tcodex resume ID        Continue an existing conversation\n"
-              "  Ctrl-b d                Detach without stopping Codex\n"
+              "  tcodex --keep-alive [Codex arguments]  Keep running after detach\n"
+              "  Closing the terminal or Ctrl-b d stops the session by default.\n"
               "  tmux -L teamcodex-hud attach   Reattach\n"
               "Requires: tmux, Python 3, running TeamCodex proxy")
         return 0
@@ -62,16 +66,28 @@ def launch(arguments):
                      sys.executable, str(statusline), "--watch", "--codex-pane", top)
         for event in ("client-attached", "client-resized"):
             run("set-hook", "-t", session, event, f"resize-pane -t {footer} -y {rows}")
+        if not keep_alive:
+            # Setting this before the first attachment destroys the new session immediately.
+            run("set-hook", "-a", "-t", session, "client-attached",
+                f"set-option -t {session} destroy-unattached on")
         run("select-pane", "-t", top)
-        # Only the selected Codex process exiting closes this dedicated session.
+        # Exiting Codex also closes the footer, including in keep-alive mode.
         command = (shlex.join([proxy, "run", "--", *arguments]) + "; "
                    + shlex.join([*base, "kill-session", "-t", session]))
         run("respawn-pane", "-k", "-t", top, "/bin/sh", "-c", command)
     except subprocess.CalledProcessError as error:
         if created:
             subprocess.run([*base, "kill-session", "-t", session], env=env, capture_output=True)
-        sys.exit("Could not start the Codex footer: " + error.stderr.strip())
-    return subprocess.call([*base, "attach-session", "-t", session], env=env)
+        sys.exit("Could not start the Codex footer: " + (error.stderr or str(error)).strip())
+    try:
+        return subprocess.call([*base, "attach-session", "-t", session], env=env)
+    finally:
+        # Failed attachment must not orphan a new session or stop another attached client.
+        state = subprocess.run([*base, "display-message", "-p", "-t", session,
+                                "#{session_attached} #{session_last_attached}"],
+                               env=env, capture_output=True, text=True).stdout.split()
+        if state and state[0] == "0" and (not keep_alive or len(state) == 1):
+            subprocess.run([*base, "kill-session", "-t", session], env=env, capture_output=True)
 
 
 if __name__ == "__main__":

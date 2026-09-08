@@ -35,7 +35,7 @@ def launch(arguments):
     except Exception:
         sys.exit("TeamCodex proxy unavailable. Start it with: teamcodex server")
     size = shutil.get_terminal_size()
-    rows = len(render(data))
+    rows = len(render(data)) + 1
     if size.lines < rows + 10 or size.columns < 70:
         sys.exit(f"Enlarge the terminal to at least 70 columns and {rows + 10} rows.")
     session = "codex-" + uuid.uuid4().hex[:8]
@@ -59,7 +59,7 @@ def launch(arguments):
         run("set-option", "-t", session, "mouse", "on")
         run("set-window-option", "-t", session, "pane-border-style", "fg=colour238")
         footer = run("split-window", "-d", "-P", "-F", "#{pane_id}", "-v", "-l", str(rows), "-t", top,
-                     sys.executable, str(statusline), "--watch")
+                     sys.executable, str(statusline), "--watch", "--codex-pane", top)
         for event in ("client-attached", "client-resized"):
             run("set-hook", "-t", session, event, f"resize-pane -t {footer} -y {rows}")
         run("select-pane", "-t", top)

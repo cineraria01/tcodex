@@ -11,7 +11,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.error import HTTPError
 
-from statusline import account_state, bar, clean, pool, read_status, render
+from statusline import account_state, bar, cache_row, clean, last_usage, pool, read_status, render, session_log
+from unittest.mock import patch
 
 
 def check():
@@ -55,6 +56,24 @@ def check():
             pass
 
     with tempfile.TemporaryDirectory() as temporary:
+        log = Path(temporary) / "rollout-test.jsonl"
+        usage = {"input_tokens": 150566, "cached_input_tokens": 148864}
+        record = json.dumps({"type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": usage}}})
+        log.write_text(json.dumps({"type": "session_meta", "payload": {"source": "cli"}}) + "\n" + record + "\n")
+        assert last_usage(log) == usage
+        assert cache_row(usage) == "Cache last: 98.9% | 148,864/150,566 in | new 1,702"
+        with log.open("a") as stream:
+            stream.write(json.dumps({"padding": "x" * 70000}) + '\n{"type":"event_msg","payload":{"type":"token_count"')
+        assert last_usage(log) == usage
+        assert "0.0%" in cache_row({"input_tokens": 100, "cached_input_tokens": 0})
+        assert "unavailable" in cache_row({"input_tokens": 0, "cached_input_tokens": 0})
+        assert "unavailable" in cache_row({"input_tokens": 10})
+        child_log = Path(temporary) / "rollout-child.jsonl"
+        child_log.write_text(json.dumps({"type": "session_meta", "payload": {"source": {"subagent": {}}}}) + "\n")
+        with patch("statusline.subprocess.check_output", side_effect=["10", "10 1 sh\n11 10 node\n12 11 /bin/codex\n99 1 /bin/codex"]), patch("statusline.subprocess.run") as opened:
+            opened.return_value.stdout = f"n{child_log}\nn{log}\n"
+            assert session_log("%0") == log
+            assert opened.call_args.args[0][4] == "12"
         config = Path(temporary) / "config.json"
         with HTTPServer(("127.0.0.1", 0), Handler) as server:
             worker = threading.Thread(target=server.serve_forever, daemon=True)

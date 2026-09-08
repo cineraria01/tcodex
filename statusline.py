@@ -7,6 +7,7 @@ import math
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -128,6 +129,70 @@ def account_state(account, now):
     return "ready"
 
 
+def session_log(pane):
+    """Find this pane's CLI log, excluding subagents and other terminal windows."""
+    pid = int(subprocess.check_output(
+        ["tmux", "-L", "teamcodex-hud", "display-message", "-p", "-t", pane, "#{pane_pid}"],
+        text=True, timeout=2).strip())
+    processes = subprocess.check_output(["ps", "-axo", "pid=,ppid=,comm="], text=True, timeout=2)
+    entries = [line.split(None, 2) for line in processes.splitlines() if line.strip()]
+    descendants = {pid}
+    while True:
+        children = {int(p) for p, parent, _ in entries if int(parent) in descendants}
+        if children <= descendants:
+            break
+        descendants |= children
+    codex = [p for p, _, command in entries if int(p) in descendants and Path(command).name == "codex"]
+    if len(codex) != 1:
+        return None
+    opened = subprocess.run(["lsof", "-n", "-P", "-p", codex[0], "-Fn"],
+                            capture_output=True, text=True, timeout=2)
+    candidates = set()
+    for line in opened.stdout.splitlines():
+        if line.startswith("n/") and Path(line[1:]).name.startswith("rollout-") and line.endswith(".jsonl"):
+            path = Path(line[1:])
+            with path.open() as log:
+                meta = json.loads(log.readline())
+            if meta.get("type") == "session_meta" and meta.get("payload", {}).get("source") == "cli":
+                candidates.add(path)
+    # Never guess by directory or modification time when multiple sessions are open.
+    return candidates.pop() if len(candidates) == 1 else None
+
+
+def last_usage(path):
+    """Read backwards in blocks; ignore an unfinished final JSONL record."""
+    with path.open("rb") as log:
+        position = log.seek(0, 2)
+        pending = b""
+        while position:
+            size = min(position, 65536)
+            position -= size
+            log.seek(position)
+            lines = (log.read(size) + pending).split(b"\n")
+            pending = lines.pop(0) if position else b""
+            for line in reversed(lines):
+                if b'"token_count"' not in line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except (ValueError, UnicodeDecodeError):
+                    continue
+                payload = event.get("payload") or {}
+                if event.get("type") == "event_msg" and payload.get("type") == "token_count" and payload.get("info"):
+                    return payload["info"].get("last_token_usage")
+    return None
+
+
+def cache_row(usage):
+    if not isinstance(usage, dict):
+        return "Cache last: waiting for usage"
+    total, cached = number(usage.get("input_tokens")), number(usage.get("cached_input_tokens"))
+    if total is None or cached is None or total <= 0 or not 0 <= cached <= total:
+        return "Cache last: unavailable"
+    return (f"Cache last: {cached / total:.1%} | {cached:,.0f}/{total:,.0f} in"
+            f" | new {total - cached:,.0f}")
+
+
 def render(data, now=None, color=False, width=100):
     now = time.time() if now is None else now
     accounts = data["accounts"]
@@ -171,6 +236,7 @@ def main():
     parser.add_argument("--config", type=Path, default=Path.home() / ".config/teamcodex.json")
     parser.add_argument("--watch", action="store_true", help="refresh every two seconds")
     parser.add_argument("--plain", action="store_true", help="disable ANSI colors")
+    parser.add_argument("--codex-pane", help="tmux pane whose latest request cache usage is shown")
     args = parser.parse_args()
     color = sys.stdout.isatty() and "NO_COLOR" not in os.environ and not args.plain
     watching = args.watch and sys.stdout.isatty()
@@ -186,6 +252,13 @@ def main():
                 # Keep account credentials and HTTP exception details out of the display.
                 rows = ["TeamCodex: proxy unavailable or invalid status. Run: teamcodex server"]
                 failed = True
+            if args.codex_pane:
+                try:
+                    path = session_log(args.codex_pane)
+                    cache = cache_row(last_usage(path)) if path else "Cache last: session unavailable"
+                except (OSError, ValueError, subprocess.SubprocessError):
+                    cache = "Cache last: unavailable"
+                rows.append(cache[:shutil.get_terminal_size().columns])
             if watching:
                 sys.stdout.write("\033[H\033[J" + "\n".join(rows))
                 sys.stdout.flush()

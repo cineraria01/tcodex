@@ -114,6 +114,11 @@ def pool(accounts, key):
             min(resets) if resets else None)
 
 
+# A model-capacity rejection parks the account ("cool"); the proxy retries it after
+# its cooldown and reports "back" for a while once it serves again.
+RECOVERED_SHOW_SECONDS = 600
+
+
 def account_state(account, now):
     if account.get("enabled") is False:
         return "off"
@@ -124,8 +129,16 @@ def account_state(account, now):
         return "wait"
     if number(account.get("inflight")) and account["inflight"] > 0:
         return "busy"
+    cooling = account.get("capacityCooling")
+    if isinstance(cooling, dict) and any(
+            (timestamp(until) or 0) > now for until in cooling.values()):
+        return "cool"
     if account.get("usable") is False:
         return "limit"
+    recovered = account.get("capacityRecovered")
+    if isinstance(recovered, dict) and any(
+            now - RECOVERED_SHOW_SECONDS <= (timestamp(at) or 0) <= now for at in recovered.values()):
+        return "back"
     return "ready"
 
 

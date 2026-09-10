@@ -36,6 +36,14 @@ def check():
     assert "> 2.two" in "\n".join(render(changed, now=now))
     assert account_state({"inflight": 1}, now) == "busy"
     assert account_state({"rateLimitedUntil": (now - 1) * 1000}, now) == "ready"
+    assert account_state({"capacityCooling": {"gpt-6-astra": (now + 300) * 1000}}, now) == "cool"
+    assert account_state({"capacityCooling": {"gpt-6-astra": (now - 1) * 1000}}, now) == "ready"
+    assert account_state({"capacityRecovered": {"gpt-6-astra": (now - 60) * 1000}}, now) == "back"
+    assert account_state({"capacityRecovered": {"gpt-6-astra": (now - 3600) * 1000}}, now) == "ready"
+    assert account_state({"inflight": 1, "capacityCooling": {"m": (now + 300) * 1000}}, now) == "busy"
+    cooling = copy.deepcopy(data)
+    cooling["accounts"][1]["capacityCooling"] = {"gpt-6-astra": (now + 300) * 1000}
+    assert "cool " in "\n".join(render(cooling, now=now))
     assert "\033" not in clean("evil\033[2J\nname", 30)
     assert all(len(line) <= 80 for line in render(data, now=now, width=80))
 

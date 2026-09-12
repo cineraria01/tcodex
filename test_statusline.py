@@ -1,8 +1,10 @@
 """Small offline check: python3 test_statusline.py. No account login or inference."""
 
 import copy
+import base64
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -11,7 +13,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.error import HTTPError
 
-from statusline import account_state, bar, cache_row, clean, last_usage, pool, read_status, render, session_log
+from statusline import account_state, bar, cache_row, clean, last_usage, pool, read_status, render, session_log, subscription_bar
 from unittest.mock import patch
 
 
@@ -40,12 +42,28 @@ def check():
     assert account_state({"capacityCooling": {"gpt-6-astra": (now - 1) * 1000}}, now) == "ready"
     assert account_state({"capacityRecovered": {"gpt-6-astra": (now - 60) * 1000}}, now) == "back"
     assert account_state({"capacityRecovered": {"gpt-6-astra": (now - 3600) * 1000}}, now) == "ready"
-    assert account_state({"inflight": 1, "capacityCooling": {"m": (now + 300) * 1000}}, now) == "busy"
+    assert account_state({"inflight": 1, "capacityCooling": {"m": (now + 300) * 1000}}, now) == "cool"
     cooling = copy.deepcopy(data)
     cooling["accounts"][1]["capacityCooling"] = {"gpt-6-astra": (now + 300) * 1000}
     assert "cool " in "\n".join(render(cooling, now=now))
+    cooling["currentAccountUuid"] = "b"
+    assert "> 2.two" not in "\n".join(render(cooling, now=now))
+    assert "cool 5m" in "\n".join(render(cooling, now=now))
+    assert "cool 3m" in "\n".join(render(cooling, now=now + 120))
+    assert "> 2.two" in "\n".join(render(cooling, now=now + 301))
+    assert "D-" in subscription_bar({"endsAt": (now + 3 * 86400) * 1000}, now)
+    assert "past" in subscription_bar({"endsAt": (now - 1) * 1000}, now)
+    assert "-" in subscription_bar({"endsAt": "broken"}, now)
+    assert "-" in subscription_bar({"endsAt": float("inf")}, now)
     assert "\033" not in clean("evil\033[2J\nname", 30)
     assert all(len(line) <= 80 for line in render(data, now=now, width=80))
+    dated = copy.deepcopy(cooling)
+    dated["accounts"][1]["subscription"] = {"endsAt": (now + 86400) * 1000}
+    assert all(len(line) <= 70 for line in render(dated, now=now, width=70))
+    for width in (70, 80, 95, 160):
+        colored = render(dated, now=now, width=width, color=True)
+        assert all(len(re.sub(r"\033\[[0-9;]*m", "", line)) <= width for line in colored)
+        assert any("48;5;239" in line for line in colored)
 
     class Handler(BaseHTTPRequestHandler):
         redirect = False
@@ -88,6 +106,19 @@ def check():
             worker.start()
             config.write_text(json.dumps({"proxy": {"port": server.server_port, "apiKey": "local-test-key"}}))
             try:
+                assert read_status(config) == data
+                claims = {"https://api.openai.com/auth": {
+                    "chatgpt_account_id": "a", "chatgpt_subscription_active_until": "2026-09-14T00:00:00Z"}}
+                token = "header." + base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=") + ".sig"
+                local = {"proxy": {"port": server.server_port, "apiKey": "local-test-key"},
+                         "accounts": [{"accountUuid": "a", "idToken": token, "expiresAt": 123}]}
+                config.write_text(json.dumps(local))
+                assert read_status(config)["accounts"][0]["subscription"]["endsAt"] == "2026-09-14T00:00:00Z"
+                local["accounts"][0]["accountId"] = "wrong-account"
+                config.write_text(json.dumps(local))
+                assert "subscription" not in read_status(config)["accounts"][0]
+                local["accounts"][0]["idToken"] = "malformed"
+                config.write_text(json.dumps(local))
                 assert read_status(config) == data
                 Handler.redirect = True
                 try:

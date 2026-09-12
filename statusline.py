@@ -2,9 +2,11 @@
 """Read-only TeamCodex quota HUD. Rendering adapted from teamclaude-statusline (MIT)."""
 
 import argparse
+import base64
 import json
 import math
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -40,6 +42,25 @@ def read_status(config_path):
         raise ValueError("invalid status response")
     if any(not isinstance(account, dict) for account in data["accounts"]):
         raise ValueError("invalid account response")
+    configured = {a.get("accountUuid"): a for a in config.get("accounts", []) if a.get("accountUuid")}
+    for account in data["accounts"]:
+        local = configured.get(account.get("accountUuid"))
+        if not local or (account.get("subscription") or {}).get("endsAt"):
+            continue
+        try:
+            payload = local.get("idToken", "").split(".")[1]
+            claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+            auth = claims.get("https://api.openai.com/auth") or {}
+            # Local token metadata is display-only; never use it to authorize or route.
+            if auth.get("chatgpt_account_id") != (local.get("accountId") or local["accountUuid"]):
+                continue
+            if timestamp(auth.get("chatgpt_subscription_active_until")) is not None:
+                account["subscription"] = {**(account.get("subscription") or {}),
+                    "endsAt": auth["chatgpt_subscription_active_until"],
+                    "startsAt": auth.get("chatgpt_subscription_active_start"),
+                    "source": "login", "checkedAt": auth.get("chatgpt_subscription_last_checked")}
+        except (ValueError, IndexError, TypeError, AttributeError):
+            pass
     return data
 
 
@@ -86,18 +107,20 @@ def paint(text, color, enabled):
     return f"\033[{color}m{text}\033[0m" if enabled else text
 
 
-def bar(value, reset, now, color=False, width=13):
+def bar(value, reset, now, color=False, width=13, track="100"):
     ratio = number(value)
     if ratio is None:
         text = "-".center(width)
-        return paint(text, "100;37", color) if color else f"[{text}]"
+        return paint(text, f"{track};37", color) if color else f"[{text}]"
     ratio = min(1, max(0, ratio))
-    text = f"{ratio * 100:.0f}% {remaining(reset, now)}".strip()[:width].center(width)
+    pct = f"{ratio * 100:.0f}%"
+    label = f"{pct} {remaining(reset, now)}".strip()
+    text = (label if len(label) <= width else pct).center(width)
     if not color:
         return f"[{text}]"
     filled = round(ratio * width)
     bg = 42 if ratio < 0.7 else 43 if ratio < 0.9 else 41
-    return paint(text[:filled], f"{bg};97", True) + paint(text[filled:], "100;37", True)
+    return paint(text[:filled], f"{bg};97", True) + paint(text[filled:], f"{track};37", True)
 
 
 def pool(accounts, key):
@@ -114,6 +137,27 @@ def pool(accounts, key):
             min(resets) if resets else None)
 
 
+def subscription_bar(subscription, now, color=False, width=14):
+    """Recorded subscription period end, never the OAuth token expiry."""
+    subscription = subscription or {}
+    end = timestamp(subscription.get("endsAt"))
+    try:
+        end_date = datetime.fromtimestamp(end).date() if end is not None else None
+    except (ValueError, OSError, OverflowError):
+        end_date = None
+    if end_date is None:
+        return paint("-".center(width), "100;37", color) if color else f"[{'-'.center(width)}]"
+    days = (end_date - datetime.fromtimestamp(now).date()).days
+    label = "past" if end <= now else "D-DAY" if days == 0 else f"D-{days}"
+    text = f"{end_date:%m/%d} {label}".center(width)
+    if not color:
+        return f"[{text}]"
+    start = timestamp(subscription.get("startsAt"))
+    filled = round(width * min(1, max(0, (now - start) / (end - start)))) if start is not None and start < end else width
+    bg = 41 if days <= 3 else 43 if days <= 7 else 42
+    return paint(text[:filled], f"{bg};97", True) + paint(text[filled:], "100;37", True)
+
+
 # A model-capacity rejection parks the account ("cool"); the proxy retries it after
 # its cooldown and reports "back" for a while once it serves again.
 RECOVERED_SHOW_SECONDS = 600
@@ -127,12 +171,12 @@ def account_state(account, now):
     reset = timestamp(account.get("rateLimitedUntil"))
     if reset is not None and reset > now:
         return "wait"
-    if number(account.get("inflight")) and account["inflight"] > 0:
-        return "busy"
     cooling = account.get("capacityCooling")
     if isinstance(cooling, dict) and any(
             (timestamp(until) or 0) > now for until in cooling.values()):
         return "cool"
+    if number(account.get("inflight")) and account["inflight"] > 0:
+        return "busy"
     if account.get("usable") is False:
         return "limit"
     recovered = account.get("capacityRecovered")
@@ -211,17 +255,28 @@ def render(data, now=None, color=False, width=100):
     accounts = data["accounts"]
     threshold = number(data.get("switchThreshold"))
     threshold_label = f"{threshold * 100:.0f}%" if threshold is not None else "-"
-    rows = [paint(f"TeamCodex | {len(accounts)} accounts | switch {threshold_label} | > selected, * busy", "1;36", color)]
+    rows = [paint(f"TeamCodex | {len(accounts)} accounts | switch {threshold_label} | > selected, * busy"[:width], "1;36", color)]
     if not accounts:
         return rows + ["No accounts. Run: teamcodex login --name codex-1"]
     eligible = [a for a in accounts if a.get("enabled") is not False and a.get("status") != "error"]
-    name_width = 10 if width < 85 else 15
-    bar_width = 10 if width < 85 else 13
+    name_width = 9 if width < 95 else 15
+    plan_width = 4 if width < 95 else 7
+    state_width = 9 if width < 95 else 10
+    bar_width = 6 if width < 95 else 13
+    end_width = 12 if width < 95 else 14
 
-    def row(marker, label, plan, state, five, week, accent="36"):
-        prefix = f"{marker} {clean(label, name_width):<{name_width}} {clean(plan, 8):<8} {state:<5}"
-        return (paint(prefix, accent, color) + " 5h " + bar(*five, now, color, bar_width)
-                + " 7d " + bar(*week, now, color, bar_width))
+    def row(marker, label, plan, state, five, week, accent="36", subscription=None):
+        prefix = f"{marker} {clean(label, name_width):<{name_width}} {clean(plan, plan_width):<{plan_width}} {state:<{state_width}}"
+        bg = 235 if len(rows) % 2 else 239
+        track = f"48;5;{bg + 3}"
+        rendered = (paint(prefix, accent, color) + " 5h " + bar(*five, now, color, bar_width, track)
+                + " 7d " + bar(*week, now, color, bar_width, track)
+                + (" End " + subscription_bar(subscription, now, color, end_width) if subscription is not None else ""))
+        if color:
+            padding = " " * max(0, min(width, 91) - len(re.sub(r"\033\[[0-9;]*m", "", rendered)))
+            background = f"\033[48;5;{bg}m"
+            rendered = background + rendered.replace("\033[0m", "\033[0m" + background) + padding + "\033[0m"
+        return rendered
 
     # Arithmetic mean of measured enabled accounts, not pooled token capacity.
     if len(accounts) > 1:
@@ -235,12 +290,17 @@ def render(data, now=None, color=False, width=100):
         selected = (account.get("accountUuid") == current_id if current_id
                     else bool(data.get("currentAccount")) and account.get("name") == data["currentAccount"])
         state = account_state(account, now)
-        marker = "*" if state == "busy" else ">" if selected else " "
+        marker = "*" if number(account.get("inflight")) and account["inflight"] > 0 else ">" if selected and state in ("ready", "back") else " "
+        label = state
+        if state == "cool":
+            until = max((timestamp(v) or 0) for v in account["capacityCooling"].values())
+            label = "cool " + remaining(until * 1000, now)
         name = account.get("name") or f"account-{index}"
-        rows.append(row(marker, f"{index}.{name}", account.get("planType"), state,
+        rows.append(row(marker, f"{index}.{name}", account.get("planType"), label,
                         (quota.get("unified5h"), quota.get("unified5hReset")),
                         (quota.get("unified7d"), quota.get("unified7dReset")),
-                        "31" if state == "error" else ("36", "32", "33", "35")[index % 4]))
+                        "31" if state == "error" else ("36", "32", "33", "35")[index % 4],
+                        account.get("subscription") or {}))
     return rows
 
 

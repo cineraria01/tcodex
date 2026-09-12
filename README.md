@@ -32,7 +32,7 @@ Cache last: 98.9% | 148,864/150,566 in | new 1,702
 ## 사용
 
 macOS의 기존 실행기와 Linux의 로그인·상시 서비스를 검증했습니다. Python 3.9 이상과 공식 Codex CLI가 필요하며, Codex 실행 화면에는 실행 중인 TeamCodex가 필요합니다.
-설치기는 TeamCodex가 없으면 고정된 upstream 버전을 별도 경로에 함께 설치합니다. Node.js/npm과 Git이 필요하며, 하단 고정 실행에는 tmux도 필요합니다. 자세한 안내는 [설치 및 계정 등록](docs/SETUP.md)을 참고하세요.
+설치기는 TeamCodex가 없으면 포크 `cineraria01/teamclaude`(브랜치 `qjc/resilient-routing`)의 최신 커밋을 별도 경로에 함께 설치합니다. Node.js/npm과 Git이 필요하며, 하단 고정 실행에는 tmux도 필요합니다. 자세한 안내는 [설치 및 계정 등록](docs/SETUP.md)을 참고하세요.
 
 ```sh
 brew install tmux                 # macOS, 최초 한 번

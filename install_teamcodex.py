@@ -6,7 +6,9 @@ import sys
 from pathlib import Path
 from typing import Final
 
-UPSTREAM: Final = 'git+https://github.com/sangrokjung/teamclaude.git#408297e8300a0ac8ad7d7e895e14612e7db7e303'
+# Owner fork only (never the sangrokjung/jung-wan-kim/karpeleslab originals): the fork's
+# default branch carries every local fix, so install its tip rather than a pinned commit.
+UPSTREAM: Final = 'git+https://github.com/cineraria01/teamclaude.git#qjc/resilient-routing'
 
 
 def install_proxy(prefix: Path) -> Path:

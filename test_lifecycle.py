@@ -33,7 +33,8 @@ def check():
     tmux = shutil.which("tmux")
     assert tmux, "Install tmux to run this check"
     root = Path(__file__).resolve().parent
-    for mode in ("close", "detach", "keep-alive", "two-clients", "attach-failure", "keep-attach-failure"):
+    for mode in ("close", "detach", "keep-alive", "two-clients", "attach-failure", "keep-attach-failure",
+                 "stale-server-cwd"):
         with tempfile.TemporaryDirectory(prefix="tcodex-test-") as directory:
             path = Path(directory)
             socket = path.name
@@ -50,7 +51,7 @@ def check():
             proxy.write_text(f"#!{sys.executable}\n" +
                              "import json, os, subprocess, sys, time\nfrom pathlib import Path\n" +
                              "child = subprocess.Popen(['sleep', '300'])\n" +
-                             f"Path({str(record)!r}).write_text(json.dumps([os.getpid(), child.pid, sys.argv[1:]]))\n" +
+                             f"Path({str(record)!r}).write_text(json.dumps([os.getpid(), child.pid, sys.argv[1:], os.getcwd()]))\n" +
                              "time.sleep(300)\n")
             proxy.chmod(0o755)
             arguments = (["--keep-alive"] if mode.startswith("keep") else []) + ["resume", "test-id"]
@@ -77,16 +78,27 @@ def check():
                 return result.stdout.strip()
 
             try:
+                if mode == "stale-server-cwd":
+                    # tmux 3.7 keeps the server's start directory; once it is gone, new
+                    # panes ignore `-c` and Codex would exit with ENOENT. Seed the server
+                    # from a directory that is deleted before tcodex launches.
+                    stale = tempfile.mkdtemp(prefix="tcodex-stale-")
+                    subprocess.run(base + ["new-session", "-d", "-s", "seed", "sleep 300"], check=True, cwd=stale)
+                    os.rmdir(stale)
                 master = connect([sys.executable, "-c", runner])
                 if mode.endswith("attach-failure"):
                     eventually(lambda: clients[0].poll() is not None)
                     eventually(lambda: not sessions())
                     assert clients[0].returncode != 0
                 else:
+                    if mode == "stale-server-cwd":
+                        eventually(record.exists)
+                        subprocess.run(base + ["kill-session", "-t", "seed"], check=True)
                     eventually(lambda: sessions().endswith(" 1") and record.exists())
-                    parent, child, forwarded = json.loads(record.read_text())
+                    parent, child, forwarded, launched_in = json.loads(record.read_text())
                     pids = [parent, child]
                     assert forwarded == ["run", "--", "resume", "test-id"], forwarded
+                    assert launched_in == str(root), launched_in
                     session = sessions().split()[0]
                     panes = subprocess.check_output(base + ["list-panes", "-t", session, "-F", "#{pane_pid}"], text=True)
                     pids += [int(pid) for pid in panes.splitlines()]

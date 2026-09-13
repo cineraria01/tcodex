@@ -129,9 +129,9 @@ patch('~/.config/teamclaude.json', {
 })
 patch('~/.config/teamcodex.json', {
     'switchThreshold': 0.98,
-    'rateLimitFailovers': 1,
-    'continuityMode': True,
-    'modelFallbacks': {'gpt-5.6-sol': ['gpt-5.6-terra']},
+    'rateLimitFailovers': 3,        # Claude와 같은 요청별 계정 전환 범위
+    'continuityMode': False,        # 제한 응답을 프록시 안에서 장시간 재시도하지 않음
+    'modelFallbacks': {},            # 계정 전환 시 요청 모델을 바꾸지 않음
 })
 PY
 ```

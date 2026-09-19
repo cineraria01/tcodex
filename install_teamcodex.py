@@ -32,7 +32,7 @@ def install_proxy(prefix: Path) -> Path:
     with command.open('x') as stream:
         stream.write('#!/bin/sh\n'
                      'if [ "${1-}" = codex ]; then shift; fi\n'
-                     'exec env TEAMCLAUDE_PROVIDER=codex \\\n'
+                     'exec env LC_ALL=C TEAMCLAUDE_PROVIDER=codex \\\n'
                      '  TEAMCLAUDE_CONFIG="$HOME/.config/teamcodex.json" \\\n'
                      '  TEAMCODEX_CODEX_BIN="$(command -v codex)" \\\n'
                      f'  node {shlex.quote(str(entry))} codex "$@"\n')

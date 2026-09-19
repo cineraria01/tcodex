@@ -59,7 +59,7 @@ npm install --global --prefix "$HOME/.local/share/teamcodex-global" --ignore-scr
   cat > "$HOME/.local/bin/teamcodex" <<'SH'
 #!/bin/sh
 if [ "${1-}" = codex ]; then shift; fi
-exec env TEAMCLAUDE_PROVIDER=codex \
+exec env LC_ALL=C TEAMCLAUDE_PROVIDER=codex \
   TEAMCLAUDE_CONFIG="$HOME/.config/teamcodex.json" \
   TEAMCODEX_CODEX_BIN="$(command -v codex)" \
   node "$HOME/.local/share/teamcodex-global/lib/node_modules/teamcodex/src/index.js" codex "$@"
@@ -90,6 +90,11 @@ Git에 추가하지 마세요. 기본 프록시 포트는 `3457`, 전환 임계�
 서비스를 설정했다면 바로 `tcodex`를 실행하세요. 수동 서버는 해당 터미널을 유지하고 다른 터미널에서 실행합니다.
 `teamcodex status`로 연결을 확인할 수 있습니다. 모든 계정의 한도가 소진되면
 즉시 계속 응답할 수 있는 것은 아닙니다. 대화 재개는 `tcodex resume SESSION_ID`입니다.
+
+실행기는 `LC_ALL=C`로 프로세스 시작 시각의 표기를 통일합니다. 서버와 제어 터미널의
+언어 설정이 다르면 기존 실행기는 `lifecycle identity unverified`로 표시하고 재시작을
+거절할 수 있습니다. 기존 실행기를 사용하는 경우 같은 설정으로 상태를 확인하세요:
+`LC_ALL=C teamcodex status`. 중지·재시작 명령은 실행 중인 Codex 대화 밖의 별도 터미널에서 실행합니다.
 
 ## 3. macOS 로그인 시 자동 시작 (선택)
 

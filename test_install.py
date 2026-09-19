@@ -29,7 +29,7 @@ entry.write_text('unused test entry')
             tool = fakebin / name
             tool.write_text(f'#!{sys.executable}\n' + '''
 import json, os, sys
-print(json.dumps({'argv': sys.argv[1:], 'provider': os.environ.get('TEAMCLAUDE_PROVIDER'), 'config': os.environ.get('TEAMCLAUDE_CONFIG')}))
+print(json.dumps({'argv': sys.argv[1:], 'provider': os.environ.get('TEAMCLAUDE_PROVIDER'), 'config': os.environ.get('TEAMCLAUDE_CONFIG'), 'locale': os.environ.get('LC_ALL')}))
 ''')
             tool.chmod(0o755)
         env = {**os.environ, 'HOME': str(home), 'PATH': str(fakebin),
@@ -43,6 +43,7 @@ print(json.dumps({'argv': sys.argv[1:], 'provider': os.environ.get('TEAMCLAUDE_P
         result = subprocess.run([str(command), '--help'], env=env, check=False, capture_output=True, text=True)
         data = json.loads(result.stdout)
         assert data['provider'] == 'codex'
+        assert data['locale'] == 'C'
         assert data['config'] == str(home / '.config/teamcodex.json')
         assert data['argv'][1:] == ['codex', '--help']
         assert (prefix / 'share/teamcodex-statusline/tcodex_login.py').is_file()

@@ -88,7 +88,7 @@ Codex 인수는 그대로 전달됩니다. 예: `tcodex -m MODEL`,
 Codex를 종료하면 해당 tmux 세션도 종료됩니다. 기존 일반 tmux 세션은 별도 소켓으로
 분리됩니다. 70열 이상, 계정 수 + 12행 이상인 터미널을 사용하세요.
 
-### Fast 모드 표시
+### Fast 모드 표시와 시작 기본값
 
 `/fast on`을 실행해도 입력창 아래에 상태가 보이지 않으면 Codex의
 `tui.status_line` 목록에 `"fast-mode"`가 있는지 확인하세요. `/statusline`에서
@@ -105,6 +105,20 @@ status_line = ["model-with-reasoning", "fast-mode", "git-branch", "context-remai
 `gpt-6-astra medium · Fast on` 표시를 확인했습니다. 이 항목은 현재 모드 설정을
 표시하며, 모드를 켜거나 서버의 실제 우선 처리를 검증하지 않습니다.
 설치기는 개인 Codex 설정을 변경하지 않으므로 이 설정은 별도로 적용합니다.
+
+Codex CLI 0.155.1의 `/fast` 선택은 현재 대화에 적용되며 시작 기본값을 저장하지 않습니다.
+GPT-6 Astra를 다시 실행할 때도 Fast on으로 시작하려면 `config.toml`의 최상위
+`service_tier`와 기존 `[features]` 설정을 아래처럼 갱신하세요. 키나 섹션을 중복 추가하지 마세요.
+
+```toml
+service_tier = "priority" # 최상위: [tui] 등 다른 섹션보다 위
+
+[features]
+fast_mode = true
+```
+
+Fast off를 시작 기본값으로 쓰려면 `service_tier = "default"`로 저장합니다.
+0.155.1에서 새로 실행한 GPT-6 Astra의 Fast on 표시를 확인했습니다.
 
 ## 표시 의미
 

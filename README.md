@@ -90,7 +90,7 @@ Codex를 종료하면 해당 tmux 세션도 종료됩니다. 기존 일반 tmux 
 
 ### Fast 모드 표시와 시작 기본값
 
-`/fast on`을 실행해도 입력창 아래에 상태가 보이지 않으면 Codex의
+`/fast`로 모드를 전환해도 입력창 아래에 상태가 보이지 않으면 Codex의
 `tui.status_line` 목록에 `"fast-mode"`가 있는지 확인하세요. `/statusline`에서
 해당 항목을 선택하거나, `~/.codex/config.toml`의 기존 `[tui]` 섹션을 수정합니다.
 `CODEX_HOME`을 지정했다면 해당 디렉터리의 `config.toml`을 사용합니다.
@@ -106,19 +106,28 @@ status_line = ["model-with-reasoning", "fast-mode", "git-branch", "context-remai
 표시하며, 모드를 켜거나 서버의 실제 우선 처리를 검증하지 않습니다.
 설치기는 개인 Codex 설정을 변경하지 않으므로 이 설정은 별도로 적용합니다.
 
-Codex CLI 0.155.1의 `/fast` 선택은 현재 대화에 적용되며 시작 기본값을 저장하지 않습니다.
-GPT-6 Astra를 다시 실행할 때도 Fast on으로 시작하려면 `config.toml`의 최상위
-`service_tier`와 기존 `[features]` 설정을 아래처럼 갱신하세요. 키나 섹션을 중복 추가하지 마세요.
+Codex CLI 0.155.1에서는 인수 없는 `/fast`로 On/Off를 전환하며, 선택은 실행 중인
+Codex가 사용하는 `config.toml`에 저장됩니다. 새 `tcodex`가 같은 설정 파일을 사용하면
+Off도 유지됩니다. 파일에서 시작 기본값을 Off로 설정하려면 최상위 `service_tier`와
+기존 `[features]`를 아래처럼 갱신하세요. 키나 섹션을 중복 추가하지 마세요.
 
 ```toml
-service_tier = "priority" # 최상위: [tui] 등 다른 섹션보다 위
+service_tier = "default" # Fast off. 최상위: [tui] 등 다른 섹션보다 위
 
 [features]
 fast_mode = true
 ```
 
-Fast off를 시작 기본값으로 쓰려면 `service_tier = "default"`로 저장합니다.
-0.155.1에서 새로 실행한 GPT-6 Astra의 Fast on 표시를 확인했습니다.
+Fast on의 저장값은 `service_tier = "fast"`입니다. `fast_mode = true`는 Fast 선택 기능을
+활성화하는 설정이므로, 이 값이 켜져 있어도 모드는 Off일 수 있습니다.
+
+일반 터미널의 기본 경로는 `~/.codex/config.toml`입니다. Orca 등에서 `CODEX_HOME`을
+지정한 실행은 별도 설정 파일을 사용하며 두 파일은 자동으로 동기화되지 않습니다.
+Off로 바꿨는데 새 실행이 On이면, 모드를 바꾼 실행과 새 `tcodex`의 `CODEX_HOME`이
+같은지 확인하고 새 실행이 읽는 설정의 `service_tier`를 확인하세요.
+
+2026-09-20: Codex CLI 0.155.1에서 On → Off 전환 후 `default` 저장과 종료·재실행 시
+Fast off 표시를 확인했습니다.
 
 ## 표시 의미
 

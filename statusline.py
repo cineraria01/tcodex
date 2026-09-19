@@ -142,11 +142,18 @@ def subscription_bar(subscription, now, color=False, width=14):
     subscription = subscription or {}
     end = timestamp(subscription.get("endsAt"))
     try:
-        end_date = datetime.fromtimestamp(end).date() if end is not None else None
+        # A recorded cancellation uses the midnight AFTER its last usable day.
+        display_end = end
+        if end is not None and subscription.get("source") != "login" and subscription.get("state") in (
+                "cancellation-scheduled", "end-date-reached", "ended"):
+            display_end -= 0.001
+        end_date = datetime.fromtimestamp(display_end).date() if display_end is not None else None
     except (ValueError, OSError, OverflowError):
         end_date = None
-    if end_date is None:
-        return paint("-".center(width), "100;37", color) if color else f"[{'-'.center(width)}]"
+    # Refreshed ID tokens can retain an old billing snapshot after renewal.
+    if end_date is None or (end <= now and subscription.get("source") == "login"):
+        text = ("check date" if end_date is not None else "-").center(width)
+        return paint(text, "100;37", color) if color else f"[{text}]"
     days = (end_date - datetime.fromtimestamp(now).date()).days
     label = "past" if end <= now else "D-DAY" if days == 0 else f"D-{days}"
     text = f"{end_date:%m/%d} {label}".center(width)
@@ -193,15 +200,20 @@ def session_log(pane):
         text=True, timeout=2).strip())
     processes = subprocess.check_output(["ps", "-axo", "pid=,ppid=,comm="], text=True, timeout=2)
     entries = [line.split(None, 2) for line in processes.splitlines() if line.strip()]
+    codex_pids = {int(p) for p, _, command in entries if Path(command).name == "codex"}
     descendants = {pid}
     while True:
-        children = {int(p) for p, parent, _ in entries if int(parent) in descendants}
+        # Stop at the pane's CLI: nested exec/login processes are not its session.
+        children = {int(p) for p, parent, _ in entries
+                    if int(parent) in descendants and int(parent) not in codex_pids}
         if children <= descendants:
             break
         descendants |= children
-    codex = [p for p, _, command in entries if int(p) in descendants and Path(command).name == "codex"]
-    if len(codex) != 1:
+    codex = [str(p) for p in descendants & codex_pids]
+    if not codex:
         return None
+    if len(codex) != 1:
+        raise ValueError("ambiguous pane CLI")
     opened = subprocess.run(["lsof", "-n", "-P", "-p", codex[0], "-Fn"],
                             capture_output=True, text=True, timeout=2)
     candidates = set()
@@ -213,7 +225,9 @@ def session_log(pane):
             if meta.get("type") == "session_meta" and meta.get("payload", {}).get("source") == "cli":
                 candidates.add(path)
     # Never guess by directory or modification time when multiple sessions are open.
-    return candidates.pop() if len(candidates) == 1 else None
+    if len(candidates) > 1:
+        raise ValueError("ambiguous CLI log")
+    return candidates.pop() if candidates else None
 
 
 def last_usage(path):
@@ -328,7 +342,7 @@ def main():
             if args.codex_pane:
                 try:
                     path = session_log(args.codex_pane)
-                    cache = cache_row(last_usage(path)) if path else "Cache last: session unavailable"
+                    cache = cache_row(last_usage(path) if path else None)
                 except (OSError, ValueError, subprocess.SubprocessError):
                     cache = "Cache last: unavailable"
                 rows.append(cache[:shutil.get_terminal_size().columns])

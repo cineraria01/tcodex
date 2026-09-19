@@ -6,6 +6,7 @@ import json
 import os
 import re
 from pathlib import Path
+from datetime import datetime
 import subprocess
 import sys
 import tempfile
@@ -13,7 +14,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.error import HTTPError
 
-from statusline import account_state, bar, cache_row, clean, last_usage, pool, read_status, render, session_log, subscription_bar
+from statusline import account_state, bar, cache_row, clean, last_usage, main, pool, read_status, render, session_log, subscription_bar
 from unittest.mock import patch
 
 
@@ -53,6 +54,13 @@ def check():
     assert "> 2.two" in "\n".join(render(cooling, now=now + 301))
     assert "D-" in subscription_bar({"endsAt": (now + 3 * 86400) * 1000}, now)
     assert "past" in subscription_bar({"endsAt": (now - 1) * 1000}, now)
+    assert "check date" in subscription_bar({"endsAt": (now - 1) * 1000, "source": "login"}, now)
+    assert "D-" in subscription_bar({"endsAt": (now + 3 * 86400) * 1000, "source": "login"}, now)
+    midnight = datetime(2026, 10, 15).timestamp()
+    cancellation = {"state": "cancellation-scheduled", "endsAt": midnight * 1000}
+    assert "10/14 D-DAY" in subscription_bar(cancellation, midnight - 3600)
+    assert "10/14 past" in subscription_bar(cancellation, midnight)
+    assert "10/15 D-1" in subscription_bar({**cancellation, "source": "login"}, midnight - 3600)
     assert "-" in subscription_bar({"endsAt": "broken"}, now)
     assert "-" in subscription_bar({"endsAt": float("inf")}, now)
     assert "\033" not in clean("evil\033[2J\nname", 30)
@@ -64,6 +72,17 @@ def check():
         colored = render(dated, now=now, width=width, color=True)
         assert all(len(re.sub(r"\033\[[0-9;]*m", "", line)) <= width for line in colored)
         assert any("48;5;239" in line for line in colored)
+
+    # A new CLI may not have opened its rollout yet; this is normal startup.
+    with patch("sys.argv", ["statusline.py", "--plain", "--codex-pane", "%0"]), \
+            patch("statusline.read_status", return_value=data), \
+            patch("statusline.session_log", return_value=None), \
+            patch("builtins.print") as displayed:
+        assert main() == 0
+        assert displayed.call_args.args[0].endswith("Cache last: waiting for usage")
+        with patch("statusline.session_log", side_effect=ValueError("ambiguous CLI log")):
+            assert main() == 0
+            assert displayed.call_args.args[0].endswith("Cache last: unavailable")
 
     class Handler(BaseHTTPRequestHandler):
         redirect = False
@@ -100,6 +119,25 @@ def check():
             opened.return_value.stdout = f"n{child_log}\nn{log}\n"
             assert session_log("%0") == log
             assert opened.call_args.args[0][4] == "12"
+        # Login/exec children must not hide the outer CLI or select their usage.
+        processes = "10 1 sh\n11 10 node\n12 11 /bin/codex\n13 12 sh\n14 13 /bin/codex\n99 1 /bin/codex"
+        for pane_pid in ("10", "12"):
+            with patch("statusline.subprocess.check_output", side_effect=[pane_pid, processes]), patch("statusline.subprocess.run") as opened:
+                opened.return_value.stdout = f"n{log}\n"
+                assert session_log("%0") == log
+                assert opened.call_args.args[0][4] == "12"
+        for processes, paths in (
+                ("10 1 sh\n12 10 /bin/codex\n14 10 /bin/codex", f"n{log}\n"),
+                ("10 1 sh\n12 10 /bin/codex", f"n{log}\nn{child_log}\n")):
+            child_log.write_text(json.dumps({"type": "session_meta", "payload": {"source": "cli"}}) + "\n")
+            with patch("statusline.subprocess.check_output", side_effect=["10", processes]), patch("statusline.subprocess.run") as opened:
+                opened.return_value.stdout = paths
+                try:
+                    session_log("%0")
+                except ValueError:
+                    pass
+                else:
+                    raise AssertionError("Ambiguous sessions must not look like normal startup")
         config = Path(temporary) / "config.json"
         with HTTPServer(("127.0.0.1", 0), Handler) as server:
             worker = threading.Thread(target=server.serve_forever, daemon=True)
@@ -114,6 +152,13 @@ def check():
                          "accounts": [{"accountUuid": "a", "idToken": token, "expiresAt": 123}]}
                 config.write_text(json.dumps(local))
                 assert read_status(config)["accounts"][0]["subscription"]["endsAt"] == "2026-09-14T00:00:00Z"
+                claims["https://api.openai.com/auth"]["chatgpt_subscription_active_until"] = "2026-10-14T00:00:00Z"
+                local["accounts"][0]["idToken"] = "header." + base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=") + ".sig"
+                config.write_text(json.dumps(local))
+                assert read_status(config)["accounts"][0]["subscription"]["endsAt"] == "2026-10-14T00:00:00Z"
+                data["accounts"][0]["subscription"] = {"state": "cancellation-scheduled", "endsAt": "2026-10-15T00:00:00Z"}
+                assert read_status(config)["accounts"][0]["subscription"] == data["accounts"][0]["subscription"]
+                del data["accounts"][0]["subscription"]
                 local["accounts"][0]["accountId"] = "wrong-account"
                 config.write_text(json.dumps(local))
                 assert "subscription" not in read_status(config)["accounts"][0]

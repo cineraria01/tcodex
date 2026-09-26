@@ -54,31 +54,11 @@ python3 install.py
 이미 `teamcodex` 명령이 PATH에 있으면 installer가 그것을 그대로 쓰고 설치를 건너뛴다
 (`Using existing TeamCodex`). 그 경우 그것이 원본인지 확인하고 지운 뒤 다시 돌린다.
 
-### 1-1. 로컬 전용 패치 05 (Codex 실행 인자에서 chatgpt_base_url 오버라이드 제거)
+### 1-1. Codex 실행 옵션
 
-포크에 넣지 않은 로컬 전용 수정이다(업스트림 테스트가 이 인자를 기대해서 포크에는 없다).
-`src/codex.js`에서 아래 두 줄을 지운다:
-
-```sh
-PKG=~/.local/share/teamcodex-global/lib/node_modules/teamcodex
-cd "$PKG" && patch -p1 <<'EOF'
---- a/src/codex.js
-+++ b/src/codex.js
-@@ -211,8 +211,6 @@
-     'model_provider="teamcodex_proxy"',
-     '-c',
-     `model_providers.teamcodex_proxy={ ${provider} }`,
--    '-c',
--    `chatgpt_base_url="http://127.0.0.1:${port}"`,
-   ];
-   if (userArgs[0] === 'resume') {
-     return [...userArgs, ...overrides];
-EOF
-node --check src/codex.js && echo ok
-```
-
-줄 번호가 어긋나 hunk가 실패하면 `grep -n chatgpt_base_url src/codex.js`로 찾아 그 `'-c'`
-줄과 함께 두 줄만 손으로 지운다.
+포크에 기존 로컬 패치 05가 반영되어 별도 패치가 필요 없다.
+추론 요청은 `model_providers.teamcodex_proxy.base_url`로 보내고,
+`chatgpt_base_url`은 덮어쓰지 않아 Codex의 ChatGPT 부가 기능 주소를 유지한다.
 
 ### 1-2. Claude 풀 래퍼 `~/.local/bin/teamclaude` 만들기
 
@@ -250,7 +230,7 @@ cd ~/some-project && tcodex    # Codex 화면 아래 tmux 패널로 상태줄
 ## 7. 최종 점검표
 
 - [ ] `grep -c isOverloadEvent ~/.local/share/teamcodex-global/lib/node_modules/teamcodex/src/server.js` ≥ 1 — 포크에만 있는 수정이 들어 있다(원본이면 0). `npm ls -g --prefix ~/.local/share/teamcodex-global`은 `teamcodex@1.3.0`
-- [ ] `grep -c chatgpt_base_url ~/.local/share/teamcodex-global/lib/node_modules/teamcodex/src/codex.js` → 0 (패치 05)
+- [ ] `buildCodexProxyArgs`가 `chatgpt_base_url` 옵션을 추가하지 않음 — 포크의 `test/codex.test.js`, `test/codex-run.test.js`로 검증
 - [ ] `launchctl list | grep -E 'teamclaude|teamcodex'` 두 줄, 상태 0
 - [ ] `teamclaude status`·`teamcodex status`에 계정이 보이고 `curl` status 200
 - [ ] `claude -p "OK" --model claude-fable-5-1` 응답, 하단 상태라인 표시

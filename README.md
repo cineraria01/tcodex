@@ -33,6 +33,32 @@ Cache last: 98.9% | 148,864/150,566 in | new 1,702
 
 ## 사용
 
+### OmO Native 연결
+
+`omo-ai`와 두 프록시가 설치·로그인되어 있다면 다음 명령으로 연결합니다.
+
+```sh
+python3 configure_omo.py
+omo
+```
+
+기본 모델은 `teamclaude/claude-opus-5-5`이며 `/model`에서 `teamcodex/gpt-6-astra`도
+선택할 수 있습니다. 로그인·계정 전환은 기존 프록시가 관리합니다. OMO에는 계정 토큰을
+복사하지 않고 요청할 때 프록시 설정의 접속 키를 읽습니다. 기존 OMO 로그인은 보존하며,
+모델 선택 범위는 두 프록시로 제한하고 OMO 자체 모델 폴백은 끕니다.
+
+설정은 `~/.omo/agent/models.json`과 `settings.json`에 적용하며 기존 파일은 백업합니다.
+실행 중인 OMO는 재시작하세요. 기본 설치 경로는 Bun 전역 설치이며 다른 위치라면
+`--senpi-dir /path/to/@code-yeongyu/senpi`를 지정합니다. Node.js와 Python 3가 필요합니다.
+
+TeamClaude의 구독 인증 요청에는 일반 API 키 요청과 다른 헤더·시스템 메시지·도구 형식이
+필요합니다. 스크립트의 `sk-ant-oat-teamclaude-proxy`는 Senpi의 OAuth 요청 형식을 선택하는
+식별값이며 실제 토큰이 아닙니다. 실제 Authorization은 프록시 접속 키로 덮어씁니다.
+이 호환 처리는 OmO 5.0.0 / Senpi 2026.9.26에서 검증했으며 엔진 업데이트 후 재검증이
+필요합니다. TeamCodex는 `/codex` Responses 경로와 해당 요청 제약을 사용합니다.
+
+### Codex CLI 설치
+
 macOS의 기존 실행기와 Linux의 로그인·상시 서비스를 검증했습니다. Python 3.9 이상과 공식 Codex CLI가 필요하며, Codex 실행 화면에는 실행 중인 TeamCodex가 필요합니다.
 설치기는 TeamCodex가 없으면 포크 `cineraria01/teamclaude`(브랜치 `qjc/resilient-routing`)의 최신 커밋을 별도 경로에 함께 설치합니다. Node.js/npm과 Git이 필요하며, 하단 고정 실행에는 tmux도 필요합니다. 자세한 안내는 [설치 및 계정 등록](docs/SETUP.md)을 참고하세요.
 

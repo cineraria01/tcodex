@@ -59,12 +59,23 @@ def launch(arguments):
         return subprocess.run([*base, *args], check=True, env=env, cwd=home,
                               capture_output=True, text=True).stdout.strip()
 
+    # Codex starts in its own pane process once the layout is ready. Replacing a
+    # placeholder with `respawn-pane -k` closes one PTY and opens another at once,
+    # which macOS intermittently rejects with "fork failed: Device not configured"
+    # (ENXIO from a /dev/ptmx slot race near a 16-PTY boundary).
+    gate = "tcodex-" + session
+    # Exiting Codex also closes the footer, including in keep-alive mode.
+    # The explicit cd keeps the caller's directory even on a HUD server whose
+    # own start directory no longer exists (see the note above).
+    command = (shlex.join([*base, "wait-for", gate]) + " && cd " + shlex.quote(cwd) + " && "
+               + shlex.join([proxy, "run", "--", *arguments]) + "; "
+               + shlex.join([*base, "kill-session", "-t", session]))
     created = False
     try:
         top = run("new-session", "-d", "-P", "-F", "#{pane_id}", "-s", session,
                   "-n", "Codex", "-c", cwd, "-x", str(size.columns), "-y", str(size.lines),
                   "-e", "CODEX_HOME=" + env.get("CODEX_HOME", str(Path.home() / ".codex")),
-                  "/bin/sleep", "60")
+                  "/bin/sh", "-c", command)
         created = True
         run("set-option", "-t", session, "status", "off")
         run("set-option", "-t", session, "mouse", "on")
@@ -78,13 +89,7 @@ def launch(arguments):
             run("set-hook", "-a", "-t", session, "client-attached",
                 f"set-option -t {session} destroy-unattached on")
         run("select-pane", "-t", top)
-        # Exiting Codex also closes the footer, including in keep-alive mode.
-        # The explicit cd keeps the caller's directory even on a HUD server whose
-        # own start directory no longer exists (see the note above).
-        command = ("cd " + shlex.quote(cwd) + " && "
-                   + shlex.join([proxy, "run", "--", *arguments]) + "; "
-                   + shlex.join([*base, "kill-session", "-t", session]))
-        run("respawn-pane", "-k", "-t", top, "/bin/sh", "-c", command)
+        run("wait-for", "-S", gate)
     except subprocess.CalledProcessError as error:
         if created:
             subprocess.run([*base, "kill-session", "-t", session], env=env, cwd=home, capture_output=True)

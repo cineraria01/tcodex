@@ -43,6 +43,9 @@ def check():
             wrapper.write_text(f"#!{sys.executable}\n" +
                                "import os, sys\na = sys.argv[1:]\n" +
                                f"a[a.index('-L') + 1] = {socket!r}\n" +
+                               # respawn-pane closes and reopens a PTY at once; macOS then
+                               # intermittently fails with "fork failed: Device not configured".
+                               "if 'respawn-pane' in a: sys.exit('respawn-pane races macOS PTY allocation')\n" +
                                ("if 'attach-session' in a: sys.exit(1)\n" if mode.endswith("attach-failure") else "") +
                                f"os.execv({tmux!r}, [{tmux!r}] + a)\n")
             wrapper.chmod(0o755)
